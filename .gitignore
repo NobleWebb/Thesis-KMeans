@@ -1,0 +1,23 @@
+# Ignore Visual Studio temporary files, build results, and folders
+.vs/
+*.user
+*.suo
+*.VC.db
+
+# Ignore build output folders
+Debug/
+Release/
+x64/
+x86/
+
+# Ignore compiled files
+*.obj
+*.exe
+*.dll
+*.pdb
+*.idb
+*.log
+
+# Ignore other system files
+Thumbs.db
+.DS_Store
