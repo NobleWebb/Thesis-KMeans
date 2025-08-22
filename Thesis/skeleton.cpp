@@ -312,10 +312,16 @@ void
 batch_kmeans(const RGB_Image* img, const int num_colors,
 	const int max_iters, RGB_Cluster* clusters)
 {
+	RGB_Cluster* temp_sum;
+
 	/* Initialize the clusters */
 	for (int iter = 0; iter < max_iters; iter++) {
+		temp_sum = (RGB_Cluster*)malloc(num_colors * sizeof(RGB_Cluster));
 		for (int i = 0; i < num_colors; i++) {
 			/* Reset the size of each cluster */
+			temp_sum[i].center.red = 0.0;
+			temp_sum[i].center.green = 0.0;
+			temp_sum[i].center.blue = 0.0;
 			clusters[i].size = 0;
 		}
 	}
@@ -325,39 +331,49 @@ batch_kmeans(const RGB_Image* img, const int num_colors,
 		RGB_Pixel pixel = img->data[i];
 		double min_dist = DBL_MAX;
 		int closest_cluster = -1;
+
+
 		for (int j = 0; j < num_colors; j++) {
 			RGB_Pixel center = clusters[j].center;
-			double dist = sqrt(pow(pixel.red - center.red, 2) +
-				pow(pixel.green - center.green, 2) +
-				pow(pixel.blue - center.blue, 2));
+			double delta_red = pixel.red - center.red;
+			double delta_green = pixel.green - center.green;
+			double delta_blue = pixel.blue - center.blue;
+			double dist = delta_red * delta_red +
+				delta_green * delta_green +
+				delta_blue * delta_blue;
 			if (dist < min_dist) {
 				min_dist = dist;
 				closest_cluster = j;
 			}
-		}
-		clusters[closest_cluster].size++;
-	}
 
-	/* Update the cluster centers */
-	for (int i = 0; i < num_colors; i++) {
-		RGB_Pixel center = clusters[i].center;
-		double red_sum = 0, green_sum = 0, blue_sum = 0;
-		for (int j = 0; j < img->size; j++) {
-			RGB_Pixel pixel = img->data[j];
-			double dist = sqrt(pow(pixel.red - center.red, 2) +
-				pow(pixel.green - center.green, 2) +
-				pow(pixel.blue - center.blue, 2));
-			if (dist < MAX_RGB_DIST) {
-				red_sum += pixel.red;
-				green_sum += pixel.green;
-				blue_sum += pixel.blue;
+			/* Update the cluster sums and sizes */
+			clusters[closest_cluster].size++;
+			temp_sum[closest_cluster].center.red += pixel.red;
+			temp_sum[closest_cluster].center.green += pixel.green;
+			temp_sum[closest_cluster].center.blue += pixel.blue;
+		}
+
+
+		// Recompute centers; track max shift to allow early exit
+		double max_shift = 0.0;
+		for (int i = 0; i < num_colors; i++) {
+			if (clusters[i].size > 0) {
+				const double new_r = temp_sum[i].center.red / clusters[i].size;
+				const double new_g = temp_sum[i].center.green / clusters[i].size;
+				const double new_b = temp_sum[i].center.blue / clusters[i].size;
+
+				const double dr = clusters[i].center.red - new_r;
+				const double dg = clusters[i].center.green - new_g;
+				const double db = clusters[i].center.blue - new_b;
+				const double shift = dr * dr + dg * dg + db * db;
+				if (shift > max_shift) max_shift = shift;
+
+				clusters[i].center.red = new_r;
+				clusters[i].center.green = new_g;
+				clusters[i].center.blue = new_b;
 			}
 		}
-		if (clusters[i].size > 0) {
-			clusters[i].center.red = red_sum / clusters[i].size;
-			clusters[i].center.green = green_sum / clusters[i].size;
-			clusters[i].center.blue = blue_sum / clusters[i].size;
-		}
+		
 	}
 }
 
@@ -429,13 +445,11 @@ main(int argc, char* argv[])
 	/* Create output image */
 	out_img = (RGB_Image*)malloc(sizeof(RGB_Image));
 
-
 	/* Stop Timer*/
 	stop = std::chrono::high_resolution_clock::now();
 
 	/* Execution Time*/
 	elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-
 
 	free(cluster);
 

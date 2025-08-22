@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\..\OneDrive\Desktop\skeleton.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
+    <None Include="4.2.03.ppm" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\..\OneDrive\Desktop\Images\4.2.03.ppm" />
+    <ClCompile Include="skeleton.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
