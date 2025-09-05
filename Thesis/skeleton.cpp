@@ -471,12 +471,16 @@ main(int argc, char* argv[])
 	/* Stop Timer*/
 	stop = std::chrono::high_resolution_clock::now();
 
+
+	out_img = (RGB_Image*)map_img(img, cluster, k);
+
 	/* Write Output Image */
 	write_PPM(out_img, "output.ppm");
 
 	/* Execution Time*/
 	elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
 
+	free(out_img);
 	free(cluster);
 
 	return 0;
