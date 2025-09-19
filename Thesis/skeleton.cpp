@@ -224,9 +224,10 @@ read_PPM(const char* filename)
 	img->size = img->height * img->width;
 	img->data = (RGB_Pixel*)malloc(img->size * sizeof(RGB_Pixel));
 
-	if (!img)
-	{
-		fprintf(stderr, "Unable to allocate memory!\n");
+	if (!img->data) {
+		fprintf(stderr, "Unable to allocate memory for pixel data!\n");
+		free(img);  // free the image struct before exiting
+		fclose(fp);
 		exit(EXIT_FAILURE);
 	}
 
@@ -234,6 +235,7 @@ read_PPM(const char* filename)
 	while (fread(&byte, 1, 1, fp) && i < img->size)
 	{
 		pixel = &img->data[i];
+
 		pixel->red = byte;
 		fread(&byte, 1, 1, fp);
 		pixel->green = byte;
@@ -285,6 +287,11 @@ gen_rand_centers(const RGB_Image* img, const int k) {
 
 	cluster = (RGB_Cluster*)malloc(k * sizeof(RGB_Cluster));
 
+	if (!cluster) {
+		fprintf(stderr, "Unable to allocate memory for clusters!\n");
+		exit(EXIT_FAILURE);
+	}
+
 	for (int i = 0; i < k; i++) {
 		/* Make the initial guesses for the centers, m1, m2, ..., mk */
 		rand_pixel = img->data[bounded_rand(img->size)];
@@ -295,8 +302,6 @@ gen_rand_centers(const RGB_Image* img, const int k) {
 
 		/* Set the number of points assigned to k cluster to zero, n1, n2, ..., nk */
 		cluster[i].size = 0;
-
-		// cout << "\nCluster Centers: " << cluster[i].center.red << ", " << cluster[i].center.green <<", "<<  cluster[i].center.blue;
 	}
 
 	return(cluster);
@@ -308,53 +313,69 @@ gen_rand_centers(const RGB_Image* img, const int k) {
    Image and Vision Computing, vol. 29, no. 4, pp. 260-271, 2011.
  */
  /* Color quantization using the batch k-means algorithm */
-void
-batch_kmeans(const RGB_Image* img, const int num_colors,
+void batch_kmeans(const RGB_Image* img, const int num_colors,
 	const int max_iters, RGB_Cluster* clusters)
 {
-	RGB_Cluster* temp_sum = (RGB_Cluster*)malloc(num_colors * sizeof(RGB_Cluster));;
+	RGB_Cluster* temp_sum = (RGB_Cluster*)malloc(num_colors * sizeof(RGB_Cluster));
+	if (!temp_sum) {
+		fprintf(stderr, "Unable to allocate memory for temp clusters!\n");
+		exit(EXIT_FAILURE);
+	}
+	int* member = (int*)calloc(img->size, sizeof(int));
+	if (!member) {
+		fprintf(stderr, "Unable to allocate memory for members!\n");
+		exit(EXIT_FAILURE);
+	}
 
-	/* Initialize the clusters */
+	int num_changes = 0;
+
 	for (int iter = 0; iter < max_iters; iter++) {
+		// Reset cluster accumulators
 		for (int i = 0; i < num_colors; i++) {
-			/* Reset the size of each cluster */
 			temp_sum[i].center.red = 0.0;
 			temp_sum[i].center.green = 0.0;
 			temp_sum[i].center.blue = 0.0;
 			clusters[i].size = 0;
 		}
-	}
 
-	/* Assign each pixel to the closest cluster */
-	for (int i = 0; i < img->size; i++) {
-		RGB_Pixel pixel = img->data[i];
-		double min_dist = DBL_MAX;
-		int closest_cluster = -1;
+		num_changes = 0;
 
+		/* Assign each pixel to the closest cluster */
+		for (int i = 0; i < img->size; i++) {
+			RGB_Pixel pixel = img->data[i];
+			double min_dist = DBL_MAX;
+			int closest_cluster = -1;
 
-		for (int j = 0; j < num_colors; j++) {
-			RGB_Pixel center = clusters[j].center;
-			double delta_red = pixel.red - center.red;
-			double delta_green = pixel.green - center.green;
-			double delta_blue = pixel.blue - center.blue;
-			double dist = delta_red * delta_red +
-				delta_green * delta_green +
-				delta_blue * delta_blue;
-			if (dist < min_dist) {
-				min_dist = dist;
-				closest_cluster = j;
+			for (int j = 0; j < num_colors; j++) {
+				RGB_Pixel center = clusters[j].center;
+				double dr = pixel.red - center.red;
+				double dg = pixel.green - center.green;
+				double db = pixel.blue - center.blue;
+				double dist = dr * dr + dg * dg + db * db;
+
+				if (dist < min_dist) {
+					min_dist = dist;
+					closest_cluster = j;
+				}
 			}
 
-			/* Update the cluster sums and sizes */
+			if (member[i] != closest_cluster) {
+				num_changes++;
+				member[i] = closest_cluster;
+			}
+
+			// Update cluster sums
 			clusters[closest_cluster].size++;
 			temp_sum[closest_cluster].center.red += pixel.red;
 			temp_sum[closest_cluster].center.green += pixel.green;
 			temp_sum[closest_cluster].center.blue += pixel.blue;
 		}
 
+		if (num_changes == 0) {
+			break;  // convergence reached
+		}
 
-		// Recompute centers; track max shift to allow early exit
-		double max_shift = 0.0;
+		// Recompute centers
 		for (int i = 0; i < num_colors; i++) {
 			if (clusters[i].size > 0) {
 				clusters[i].center.red = temp_sum[i].center.red / clusters[i].size;
@@ -362,9 +383,12 @@ batch_kmeans(const RGB_Image* img, const int num_colors,
 				clusters[i].center.blue = temp_sum[i].center.blue / clusters[i].size;
 			}
 		}
-		
 	}
+
+	free(temp_sum);
+	free(member);
 }
+
 
 void
 free_img(const RGB_Image* img) {
@@ -374,15 +398,23 @@ free_img(const RGB_Image* img) {
 	/* Free Image Pointer*/
 	delete(img);
 }
-
-const 
+ 
 RGB_Image* map_img(const RGB_Image* in_img, const RGB_Cluster* clusters, const int num_colors) {
 	RGB_Image* out_img = (RGB_Image*)malloc(sizeof(RGB_Image));
-	
+	if (!out_img) {
+		fprintf(stderr, "Unable to allocate memory for output image!\n");
+		exit(EXIT_FAILURE);
+	}
+
 	out_img->width = in_img->width;
 	out_img->height = in_img->height;
 	out_img->size = in_img->size;
 	out_img->data = (RGB_Pixel*)malloc(out_img->size * sizeof(RGB_Pixel));
+	if (!out_img->data) {
+		fprintf(stderr, "Unable to allocate memory for output image data!\n");
+		free(out_img);
+		exit(EXIT_FAILURE);
+	}
 
 	// For each pixel in the input image
 	for (int i = 0; i < in_img->size; i++) {
@@ -411,8 +443,6 @@ RGB_Image* map_img(const RGB_Image* in_img, const RGB_Cluster* clusters, const i
 		out_img->data[i].blue = clusters[closest_cluster].center.blue;
 	}
 
-	return out_img;
-	
 	return out_img;
 }
 
@@ -472,7 +502,7 @@ main(int argc, char* argv[])
 	stop = std::chrono::high_resolution_clock::now();
 
 
-	out_img = (RGB_Image*)map_img(img, cluster, k);
+	out_img = map_img(img, cluster, k);
 
 	/* Write Output Image */
 	write_PPM(out_img, "output.ppm");
